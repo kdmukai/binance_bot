@@ -324,7 +324,7 @@ if __name__ == "__main__":
                 ]
             }
         """
-        market_price = order.get("cummulativeQuoteQty")
+        market_price = order.get("fills")[0].get("price")
 
     purchase_summary = "%s %s order of %s %s %s @ %s %s" % (
         market_name,
