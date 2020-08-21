@@ -2,6 +2,7 @@ import argparse
 import boto3
 import configparser
 import datetime
+import math
 import json
 import time
 
@@ -47,6 +48,12 @@ parser.add_argument('-c', '--settings_config',
                     dest="settings_config_file",
                     help="Override default settings config file location")
 
+parser.add_argument('-d', '--dynamic_dca',
+                    action='store_true',
+                    default=False,
+                    dest="dynamic_dca",
+                    help="""Scale the trade amount up or down depending on 24hr price change""")
+
 parser.add_argument('-l', '--live',
                     action='store_true',
                     default=False,
@@ -69,6 +76,7 @@ if __name__ == "__main__":
     order_side = args.order_side.lower()
     amount = args.amount
     amount_currency = args.amount_currency
+    is_dynamic_dca = args.dynamic_dca
 
     live_mode = args.live_mode
     job_mode = args.job_mode
@@ -230,6 +238,40 @@ if __name__ == "__main__":
 
     purchase_summary = ""
 
+    if is_dynamic_dca:
+        step_size = Decimal("5.0")
+        amount_multiplier = Decimal("1.0")
+        amount_divider = Decimal("0.25")
+        orig_amount = amount
+
+        # Get the current 24hr price diff
+        ticker = client.get_ticker(symbol=market_name)
+        percent_change = Decimal(ticker.get("priceChangePercent"))
+        steps = int(math.floor(abs(percent_change / step_size)))
+
+        print(f"\tDynamic DCA\n" +
+                f"\tpercent_change: {percent_change}%\n" +
+                f"\tsteps: {steps}")
+
+        if steps > 0:
+            if (order_side == 'buy' and percent_change < 0.0) or \
+                    (order_side == 'sell' and percent_change > 0.0):
+                # We want to multiply up our trade amount
+                amount += amount * amount_multiplier * Decimal(steps)
+                print(f"Dynamic DCA scaling amount up {steps}x to {amount}")
+            else:
+                # Divide down the trade amount
+                amount -= amount * amount_divider * Decimal(steps)
+                if amount <= 0.0:
+                    print(f"Dynamic DCA canceling trade at {percent_change}%")
+                    amount = Decimal("0.0")
+                else:
+                    print(f"Dynamic DCA scaling amount down {steps}x to {amount}")
+        else:
+            # No changes to apply
+            is_dynamic_dca = False
+
+
     # What's the current best offer?
     #   Binance maker/taker fees are the same so just do a market order for fast order
     #   fills.
@@ -253,11 +295,29 @@ if __name__ == "__main__":
         Decimal('1e-%d' % quote_asset_precision)
     )
     if order_value < base_min_size:
-        print(
-            f"Cannot purchase {float(base_currency_amount)} {base_currency} @ {market_price} {quote_currency}. " +
+        message = f"Cannot purchase {float(base_currency_amount)} {base_currency} @ {market_price} {quote_currency}. " +
             f"Resulting order of {order_value:.8f} {quote_currency} " +
             f"is below the minNotional value of {base_min_size} {quote_currency}"
-        )
+        print(message)
+
+        if is_dynamic_dca:
+            purchase_summary = "Dynamic DCA: %0.2f%% (%dx): %s %s order of %s (%s) %s CANCELED" % (
+                percent_change,
+                steps,
+                market_name,
+                order_side,
+                amount,
+                orig_amount,
+                amount_currency
+            )
+            print(purchase_summary)
+            if sns_topic and live_mode:
+                sns.publish(
+                    TopicArn=sns_topic,
+                    Subject=purchase_summary,
+                    Message=message
+                )
+
         exit()
     else:
         print("order_value: %s %s" % (order_value, quote_currency))
@@ -326,15 +386,29 @@ if __name__ == "__main__":
         """
         market_price = order.get("fills")[0].get("price")
 
-    purchase_summary = "%s %s order of %s %s %s @ %s %s" % (
-        market_name,
-        order_side,
-        amount,
-        amount_currency,
-        order.get("status"),
-        market_price,
-        quote_currency
-    )
+    if is_dynamic_dca:
+        purchase_summary = "Dynamic DCA: %0.2f%% (%dx): %s %s order of %s (%s) %s %s @ %s %s" % (
+            percent_change,
+            steps,
+            market_name,
+            order_side,
+            amount,
+            orig_amount,
+            amount_currency,
+            order.get("status"),
+            market_price,
+            quote_currency
+        )
+    else:
+        purchase_summary = "%s %s order of %s %s %s @ %s %s" % (
+            market_name,
+            order_side,
+            amount,
+            amount_currency,
+            order.get("status"),
+            market_price,
+            quote_currency
+        )
 
     if sns_topic and live_mode:
         sns.publish(
