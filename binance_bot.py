@@ -241,7 +241,7 @@ if __name__ == "__main__":
     if is_dynamic_dca:
         step_size = Decimal("5.0")
         amount_multiplier = Decimal("1.0")
-        amount_divider = Decimal("0.25")
+        amount_divider = Decimal("0.5")
         orig_amount = amount
 
         # Get the current 24hr price diff
