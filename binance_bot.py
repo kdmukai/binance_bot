@@ -295,8 +295,8 @@ if __name__ == "__main__":
         Decimal('1e-%d' % quote_asset_precision)
     )
     if order_value < base_min_size:
-        message = f"Cannot purchase {float(base_currency_amount)} {base_currency} @ {market_price} {quote_currency}. " +
-            f"Resulting order of {order_value:.8f} {quote_currency} " +
+        message = f"Cannot purchase {float(base_currency_amount)} {base_currency} @ {market_price} {quote_currency}. " + \
+            f"Resulting order of {order_value:.8f} {quote_currency} " + \
             f"is below the minNotional value of {base_min_size} {quote_currency}"
         print(message)
 
