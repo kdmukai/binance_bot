@@ -348,11 +348,11 @@ if __name__ == "__main__":
                     symbol=market_name,
                     quantity=float(base_currency_amount))
         except BinanceAPIException as e:
-            print(f'Unable to place {market} order: {e}')
+            print(f'Unable to place {market_name} order: {e}')
             if sns_topic and live_mode:
                 sns.publish(
                     TopicArn=sns_topic,
-                    Subject=f'Unable to place {market} order',
+                    Subject=f'Unable to place {market_name} order',
                     Message=str(e)
                 )
             exit()
